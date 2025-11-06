@@ -19,7 +19,7 @@ function App() {
       setLoading(true);
       setResultado(null);
 
-      const res = await axios.post('http://localhost:3001/analisar-refeicao', { texto });
+      const res = await axios.post('https://nutracker-1.onrender.com/analisar-refeicao', { texto });
       setResultado(res.data);
     } catch (err) {
       console.error(err);
