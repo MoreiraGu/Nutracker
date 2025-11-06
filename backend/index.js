@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 const fs = require('fs');
@@ -11,13 +11,10 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// ====================== MySQL ======================
-const db = mysql.createPool({
-  host: process.env.MYSQL_HOST,
-  user: process.env.MYSQL_USER,
-  password: process.env.MYSQL_PASSWORD,
-  database: process.env.MYSQL_DATABASE,
-  port: process.env.MYSQL_PORT
+// ====================== PostgreSQL (Neon) ======================
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
 // ====================== Gemini ======================
@@ -40,7 +37,6 @@ function similarity(a, b) {
 function editDistance(s1, s2) {
   s1 = s1.toLowerCase();
   s2 = s2.toLowerCase();
-
   const costs = [];
   for (let i = 0; i <= s1.length; i++) {
     let lastValue = i;
@@ -60,12 +56,12 @@ function editDistance(s1, s2) {
   return costs[s2.length];
 }
 
+// ====================== CSV ======================
 const csv = fs.readFileSync('C:/Users/santo/OneDrive/Área de Trabalho/Nutracker/alimentos_filtrados.csv', 'utf8');
-// Lê o CSV, ignora cabeçalho e usa ; como separador
 const linhas = csv
   .split('\n')
-  .slice(1) // remove o cabeçalho
-  .map(l => l.split(';')[0].trim()) // pega apenas a primeira coluna (descrição)
+  .slice(1)
+  .map(l => l.split(';')[0].trim())
   .filter(l => l && !l.toLowerCase().includes('descrição dos alimentos'));
 
 const listaDeAlimentos = linhas.join('\n');
@@ -78,43 +74,17 @@ app.post('/analisar-refeicao', async (req, res) => {
 
     console.log('Texto recebido:', texto);
 
-const prompt = `
+    const prompt = `
 Você é uma IA de análise nutricional que transforma textos de refeições em alimentos exatos do banco de dados.
 
 # LISTA DE ALIMENTOS DISPONÍVEIS
-Abaixo está a lista completa dos alimentos válidos (nomes oficiais do banco de dados):
 ${listaDeAlimentos}
 
 # TAREFA
-Sua tarefa é retornar um JSON onde cada "alimento" é exatamente igual a um nome da lista acima.
-Você deve procurar o nome mais próximo na lista e usá-lo como está escrito, sem alterar letras, maiúsculas, vírgulas ou acentos.
+Retorne um JSON onde cada item tem:
+{ "alimento": "NOME EXATO DO BANCO", "quantidade": valor_em_gramas }
 
-# REGRAS
-✅ Use apenas nomes da lista.  
-✅ Se houver várias versões parecidas (ex: banana prata / banana nanica), escolha a mais semelhante ao texto do usuário.  
-✅ Converta unidades para gramas (g):
-   - 1 colher de sopa = 15g  
-   - 1 colher de chá = 5g  
-   - 1 xícara = 240g  
-   - 1 unidade = peso médio estimado (ex: banana = 70g, ovo = 50g, etc.)
-✅ Formato de saída:
-[
-  { "alimento": "NOME EXATO DO BANCO", "quantidade": número_em_gramas }
-]
-⚠️ Retorne apenas JSON puro, sem explicações nem comentários.
-
-# Exemplo
-Entrada:
-"Ovos cozidos — 200 g, Banana nanica — 140 g, Aveia em flocos — 30 g"
-
-Saída:
-[
-  { "alimento": "Ovo, galinha, cozido", "quantidade": 200 },
-  { "alimento": "Banana, nanica, crua", "quantidade": 140 },
-  { "alimento": "Aveia, flocos, crua", "quantidade": 30 }
-]
-
-Agora processe o seguinte texto do usuário:
+⚠️ Retorne apenas JSON, sem explicações.
 "${texto}"
 `;
 
@@ -125,16 +95,19 @@ Agora processe o seguinte texto do usuário:
     let geminiText = result.response.text();
     console.log("Resposta bruta Gemini:", geminiText);
 
-    const cleanText = geminiText
-      .replace(/```json/gi, "")
-      .replace(/```/g, "")
-      .trim();
+    const cleanText = geminiText.replace(/```json/gi, "").replace(/```/g, "").trim();
 
     let itensInterpretados;
     try {
       itensInterpretados = JSON.parse(cleanText);
-    } catch (err) {
-      return res.status(500).json({ erro: "JSON inválido retornado pela IA", raw: geminiText });
+    } catch {
+      // fallback: se for array de strings simples, transforma em objetos
+      try {
+        const arr = JSON.parse(cleanText.replace(/[\[\]]/g, "").split(",").map(s => `"${s.trim()}"`));
+        itensInterpretados = arr.map(a => ({ alimento: a, quantidade: 100 }));
+      } catch (err) {
+        return res.status(500).json({ erro: "JSON inválido retornado pela IA", raw: geminiText });
+      }
     }
 
     console.log("Itens interpretados:", itensInterpretados);
@@ -143,8 +116,8 @@ Agora processe o seguinte texto do usuário:
 
     for (const item of itensInterpretados) {
       const nomeIA = normalize(item.alimento);
+      const quantidade = item.quantidade || 100;
 
-      // 🧠 Busca a correspondência mais parecida no CSV
       let melhorMatch = null;
       let melhorScore = 0;
 
@@ -159,20 +132,20 @@ Agora processe o seguinte texto do usuário:
       console.log(`🔎 "${item.alimento}" → "${melhorMatch}" (score: ${melhorScore.toFixed(2)})`);
 
       if (melhorMatch && melhorScore > 0.35) {
-        const [rows] = await db.query(
-          `SELECT * FROM alimentos WHERE LOWER(nome_alimento) LIKE ? LIMIT 1`,
+        const result = await db.query(
+          `SELECT * FROM alimentos WHERE LOWER(nome_alimento) LIKE $1 LIMIT 1`,
           [`%${normalize(melhorMatch)}%`]
         );
 
-        if (rows.length > 0) {
-          const a = rows[0];
+        if (result.rows.length > 0) {
+          const a = result.rows[0];
           itens.push({
             alimento: a.nome_alimento,
-            quantidade: item.quantidade,
-            kcal: (a.calorias * item.quantidade) / 100,
-            proteina: (a.proteina * item.quantidade) / 100,
-            carbo: (a.carboidrato * item.quantidade) / 100,
-            gordura: (a.gordura * item.quantidade) / 100
+            quantidade,
+            kcal: (a.calorias * quantidade) / 100,
+            proteina: (a.proteina * quantidade) / 100,
+            carbo: (a.carboidrato * quantidade) / 100,
+            gordura: (a.gordura * quantidade) / 100
           });
           continue;
         }
@@ -180,7 +153,7 @@ Agora processe o seguinte texto do usuário:
 
       itens.push({
         alimento: item.alimento,
-        quantidade: item.quantidade,
+        quantidade,
         kcal: 0,
         proteina: 0,
         carbo: 0,
