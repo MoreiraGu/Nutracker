@@ -18,8 +18,8 @@
     "typescript": "^4.9.5",
     "web-vitals": "^2.1.4"
   },
-  "engines": {
-  "node": "18.x",
+ "engines": {
+  "node": "22.x",
   "npm": "9.x"
 },
   "scripts": {
