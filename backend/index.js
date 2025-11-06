@@ -57,18 +57,17 @@ function editDistance(s1, s2) {
 }
 
 // ====================== CSV ======================
-const csv = fs.readFileSync('C:/Users/santo/OneDrive/Área de Trabalho/Nutracker/alimentos_filtrados.csv', 'utf8');
-const linhas = csv
-  .split('\n')
-  .slice(1)
-  .map(l => l.split(';')[0].trim())
-  .filter(l => l && !l.toLowerCase().includes('descrição dos alimentos'));
+let listaDeAlimentos = [];
 
-const listaDeAlimentos = linhas.join('\n');
+async function carregarAlimentos() {
+  const res = await db.query('SELECT nome_alimento FROM alimentos');
+  listaDeAlimentos = res.rows.map(r => r.nome_alimento);
+}
 
 // ====================== ROTA PRINCIPAL ======================
 app.post('/analisar-refeicao', async (req, res) => {
   try {
+    await carregarAlimentos();
     const { texto } = req.body;
     if (!texto) return res.status(400).json({ erro: "Texto obrigatório" });
 
@@ -121,13 +120,13 @@ Retorne um JSON onde cada item tem:
       let melhorMatch = null;
       let melhorScore = 0;
 
-      for (const nome of linhas) {
+      for (const nome of listaDeAlimentos) {
         const score = similarity(nomeIA, normalize(nome));
         if (score > melhorScore) {
           melhorScore = score;
           melhorMatch = nome;
         }
-      }
+   }   
 
       console.log(`🔎 "${item.alimento}" → "${melhorMatch}" (score: ${melhorScore.toFixed(2)})`);
 
