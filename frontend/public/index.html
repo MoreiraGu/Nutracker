@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Meta SEO básica -->
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="description" content="NutriAI Tracker - Análise inteligente de refeições e macros" />
+
+    <!-- Fonte moderninha opcional -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+    <title>NutriAI Tracker</title>
+
+    <style>
+      /* Splash simples enquanto o React carrega */
+      #preload {
+        position: fixed;
+        inset: 0;
+        background: #0f172a;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Inter, sans-serif;
+        color: #16a34a;
+        font-size: 1.3rem;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="preload">Carregando NutriAI...</div>
+    <div id="root"></div>
+
+    <script>
+      // Remove o splash quando o React montar
+      window.addEventListener("DOMContentLoaded", () => {
+        setTimeout(() => {
+          const el = document.getElementById("preload");
+          if (el) el.remove();
+        }, 600);
+      });
+    </script>
+  </body>
+</html>

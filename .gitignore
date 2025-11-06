@@ -1,0 +1,25 @@
+# Node / backend
+node_modules/
+.env
+npm-debug.log
+yarn-error.log
+dist/
+build/
+
+# React / frontend
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/npm-debug.log
+frontend/yarn-error.log
+
+# VS Code
+.vscode/
+
+# Mac / Linux
+.DS_Store
+Thumbs.db
+
+# Logs e arquivos temporários
+*.log
+*.tmp
